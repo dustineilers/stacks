@@ -510,7 +510,7 @@ export interface ImportSummary {
   addedGrocery: number;
 }
 
-function insertRecipeRaw(cookbookId: string | null, raw: any): void {
+function insertRecipeRaw(cookbookId: string | null, raw: any): string {
   const id = uid('r');
   const dateAdded = typeof raw.dateAdded === 'number' ? raw.dateAdded : Date.now();
   run(
@@ -541,6 +541,7 @@ function insertRecipeRaw(cookbookId: string | null, raw: any): void {
       [uid('c'), id, new Date(dateAdded).toISOString().slice(0, 10), raw.rating || 0, 'Logged before cooking history existed.']
     );
   }
+  return id;
 }
 
 /** Merges a JSON backup (this app's own export, or the older pre-SQL format)
@@ -557,6 +558,7 @@ export function importBackup(parsed: any): ImportSummary {
     const existingBooks = listCookbooks();
     const titleKey = (title: string, author: string) => (title || '').trim().toLowerCase() + '|' + (author || '').trim().toLowerCase();
     const existingByKey = new Map(existingBooks.map((b) => [titleKey(b.title, b.author), b]));
+    const recipeIdMap = new Map<string, string>(); // old recipe id (from the backup) -> new id actually inserted
 
     incoming.forEach((raw) => {
       if (!raw || !raw.title) return;
@@ -569,7 +571,8 @@ export function importBackup(parsed: any): ImportSummary {
           if (!r || !r.name) return;
           const nameKey = r.name.trim().toLowerCase();
           if (haveNames.has(nameKey)) return;
-          insertRecipeRaw(match.id, r);
+          const newId = insertRecipeRaw(match.id, r);
+          if (r.id) recipeIdMap.set(r.id, newId);
           haveNames.add(nameKey);
           summary.addedRecipes++;
         });
@@ -582,7 +585,10 @@ export function importBackup(parsed: any): ImportSummary {
         title: raw.title, author: raw.author || '', cover: raw.cover || '', cuisine: raw.cuisine || '',
         status, rating: raw.rating || 0, notes: raw.notes || ''
       });
-      (Array.isArray(raw.recipes) ? raw.recipes : []).forEach((r: any) => insertRecipeRaw(newBook.id, r));
+      (Array.isArray(raw.recipes) ? raw.recipes : []).forEach((r: any) => {
+        const newId = insertRecipeRaw(newBook.id, r);
+        if (r && r.id) recipeIdMap.set(r.id, newId);
+      });
       existingByKey.set(key, { ...newBook, recipes: [] });
       summary.addedBooks++;
     });
@@ -592,7 +598,8 @@ export function importBackup(parsed: any): ImportSummary {
       if (!r || !r.name) return;
       const nameKey = r.name.trim().toLowerCase();
       if (existingStandaloneNames.has(nameKey)) return;
-      insertRecipeRaw(null, r);
+      const newId = insertRecipeRaw(null, r);
+      if (r.id) recipeIdMap.set(r.id, newId);
       existingStandaloneNames.add(nameKey);
       summary.addedStandalone++;
     });
@@ -614,15 +621,19 @@ export function importBackup(parsed: any): ImportSummary {
         summary.addedGrocery++;
       });
     }
-
     if (parsed.mealPlan && Array.isArray(parsed.mealPlan.entries)) {
       const current = getMealPlan();
       if (current.entries.length === 0) {
         run(`INSERT OR REPLACE INTO meal_plan (id, week_start) VALUES (1, ?)`, [parsed.mealPlan.weekStart || mondayOf(new Date())]);
         parsed.mealPlan.entries.forEach((e: any) => {
           if (!e || !e.recipeId) return;
+          // The recipe this entry pointed to got a brand-new id during this import
+          // (or wasn't imported at all, e.g. it was a duplicate) — remap or drop it,
+          // rather than inserting a dangling reference that trips the FK constraint.
+          const resolvedRecipeId = recipeIdMap.get(e.recipeId) || (getRecipe(e.recipeId) ? e.recipeId : null);
+          if (!resolvedRecipeId) return;
           run(`INSERT INTO meal_plan_entries (id, recipe_id, day, cooked) VALUES (?, ?, ?, ?)`,
-            [uid('m'), e.recipeId, typeof e.day === 'number' ? e.day : null, e.cooked ? 1 : 0]);
+            [uid('m'), resolvedRecipeId, typeof e.day === 'number' ? e.day : null, e.cooked ? 1 : 0]);
         });
       }
     }

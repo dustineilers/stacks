@@ -8,11 +8,11 @@ export const GROCERY_CATEGORIES = [
 
 const CATEGORY_HINTS: Record<string, string[]> = {
   'Produce': ['onion','garlic','shallot','tomato','potato','carrot','celery','pepper','lettuce','spinach','kale','herb','parsley','cilantro','basil','thyme','rosemary','mint','lemon','lime','orange','apple','banana','berry','berries','mushroom','zucchini','squash','cucumber','avocado','ginger','scallion','leek','broccoli','cauliflower','cabbage','sprouts','corn','pea','bean sprout','chile','jalape','eggplant','radish','beet','apricot','peach','pear','grape','melon','fennel','arugula','chard','turnip','yam','sweet potato','mango','pineapple'],
+  'Spices / Seasonings': ["salt","pepper","paprika","cumin","coriander","turmeric","cinnamon","nutmeg","clove","cardamom","chili powder","chile flakes","red pepper flakes","oregano","bay leaf","curry","garam","seasoning","vanilla","saffron","fennel seed","mustard seed","sumac","za'atar","allspice","cayenne","spice"],
   'Meat / Seafood': ['beef','chicken','pork','lamb','turkey','bacon','sausage','steak','ground','shrimp','fish','salmon','tuna','cod','crab','lobster','scallop','clam','mussel','anchov','prosciutto','pancetta','chorizo','duck','veal','ham','brisket','thigh','breast'],
   'Dairy / Eggs': ['milk','cream','butter','cheese','yogurt','egg','parmesan','mozzarella','cheddar','ricotta','feta','mascarpone','sour cream','creme fraiche','buttermilk','ghee','gruy'],
   'Bakery': ['bread','baguette','tortilla','pita','bun','roll','brioche','croissant','naan','sourdough','crouton'],
   'Frozen': ['frozen','ice cream','peas frozen'],
-  'Spices / Seasonings': ["salt","pepper","paprika","cumin","coriander","turmeric","cinnamon","nutmeg","clove","cardamom","chili powder","chile flakes","red pepper flakes","oregano","bay leaf","curry","garam","seasoning","vanilla","saffron","fennel seed","mustard seed","sumac","za'atar","allspice","cayenne","spice"],
   'Pantry': ['flour','sugar','oil','vinegar','rice','pasta','noodle','stock','broth','can','canned','tomato paste','soy sauce','fish sauce','honey','syrup','mustard','mayo','ketchup','beans','lentil','chickpea','yeast','baking powder','baking soda','cornstarch','breadcrumb','wine','sesame','tahini','coconut milk','nut','almond','walnut','pecan','cashew','peanut','olive','caper','chocolate','cocoa','oat','quinoa','couscous','polenta','gelatin','miso','sriracha','worcestershire']
 };
 

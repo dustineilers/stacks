@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { GROCERY_CATEGORIES } from '../../utils/ingredients';
 import type { GroceryItem } from '../../types';
+import { ShareGroceryButton } from './ShareGroceryButton';
 
 interface GroceryViewProps {
   items: GroceryItem[];
@@ -57,6 +58,7 @@ export function GroceryView({ items, onAdd, onToggle, onDelete, onClearChecked, 
           <div className="sub">{items.length} item{items.length === 1 ? '' : 's'}{done ? ` \u00b7 ${done} checked off` : ''}</div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <ShareGroceryButton items={items} />
           {done > 0 && <button type="button" className="btn small" onClick={onClearChecked}>Clear checked</button>}
           <button type="button" className="btn small danger" onClick={() => { if (confirm('Clear the whole grocery list?')) onClearAll(); }}>Clear all</button>
         </div>
