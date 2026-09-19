@@ -45,6 +45,7 @@ export function RecipeEditorModal({ show, editingRecipe, initialBookId, books, a
       });
       setIngredientsText(editingRecipe.ingredients.map(ingredientToLine).join('\n'));
       setBookId(editingRecipe.cookbookId || '');
+      setInstructionsText(editingRecipe.instructions.join('\n'));
     } else {
       setForm(blankForm());
       setIngredientsText('');

@@ -227,26 +227,71 @@ export interface RecipeInput {
 export function createRecipe(cookbookId: string | null, data: RecipeInput): Recipe {
   const id = uid('r');
   const dateAdded = Date.now();
+
   transaction(() => {
     run(
-      `INSERT INTO recipes (id, cookbook_id, name, page, servings, rating, notes, image, favorite, want_to_try, date_added)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, cookbookId, data.name, data.page, data.servings, data.rating, data.notes, data.image,
-        data.favorite ? 1 : 0, data.wantToTry ? 1 : 0, dateAdded]
+      `INSERT INTO recipes (
+        id, cookbook_id, name, page, servings, rating, notes, image,
+        favorite, want_to_try, date_added, instructions, source_url, author
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        cookbookId,
+        data.name,
+        data.page,
+        data.servings,
+        data.rating,
+        data.notes,
+        data.image,
+        data.favorite ? 1 : 0,
+        data.wantToTry ? 1 : 0,
+        dateAdded,
+        JSON.stringify(data.instructions || []),
+        data.sourceUrl || '',
+        data.author || ''
+      ]
     );
+
     replaceRecipeIngredients(id, data.ingredients);
     replaceRecipeTags(id, data.tags);
   });
+
   return getRecipe(id)!;
 }
 
 export function updateRecipe(id: string, data: RecipeInput): void {
   transaction(() => {
     run(
-      `UPDATE recipes SET name=?, page=?, servings=?, rating=?, notes=?, image=?, favorite=?, want_to_try=? WHERE id=?`,
-      [data.name, data.page, data.servings, data.rating, data.notes, data.image,
-        data.favorite ? 1 : 0, data.wantToTry ? 1 : 0, id]
+      `UPDATE recipes SET
+        name=?,
+        page=?,
+        servings=?,
+        rating=?,
+        notes=?,
+        image=?,
+        favorite=?,
+        want_to_try=?,
+        instructions=?,
+        source_url=?,
+        author=?
+      WHERE id=?`,
+      [
+        data.name,
+        data.page,
+        data.servings,
+        data.rating,
+        data.notes,
+        data.image,
+        data.favorite ? 1 : 0,
+        data.wantToTry ? 1 : 0,
+        JSON.stringify(data.instructions || []),
+        data.sourceUrl || '',
+        data.author || '',
+        id
+      ]
     );
+
     replaceRecipeIngredients(id, data.ingredients);
     replaceRecipeTags(id, data.tags);
   });
