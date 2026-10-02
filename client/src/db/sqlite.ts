@@ -10,13 +10,27 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let lastSaveOk = true;
 
 function migrateSchema(database: Database): void {
-  const cols = database.exec(`PRAGMA table_info(recipes)`)[0]?.values.map((r) => r[1]) || [];
-  const addCol = (name: string, ddl: string) => {
-    if (!cols.includes(name)) database.run(`ALTER TABLE recipes ADD COLUMN ${ddl}`);
+  // Recipes migrations
+  const recipeCols =
+    database.exec(`PRAGMA table_info(recipes)`)[0]?.values.map((r) => r[1]) || [];
+
+  const addRecipeCol = (name: string, ddl: string) => {
+    if (!recipeCols.includes(name)) {
+      database.run(`ALTER TABLE recipes ADD COLUMN ${ddl}`);
+    }
   };
-  addCol('instructions', `instructions TEXT NOT NULL DEFAULT '[]'`);
-  addCol('source_url', `source_url TEXT NOT NULL DEFAULT ''`);
-  addCol('author', `author TEXT NOT NULL DEFAULT ''`);
+
+  addRecipeCol('instructions', `instructions TEXT NOT NULL DEFAULT '[]'`);
+  addRecipeCol('source_url', `source_url TEXT NOT NULL DEFAULT ''`);
+  addRecipeCol('author', `author TEXT NOT NULL DEFAULT ''`);
+
+  // Meal plan migrations
+  const planCols =
+    database.exec(`PRAGMA table_info(meal_plan_entries)`)[0]?.values.map((r) => r[1]) || [];
+
+  if (!planCols.includes('date')) {
+    database.run(`ALTER TABLE meal_plan_entries ADD COLUMN date TEXT`);
+  }
 }
 
 /** Boots sql.js (WASM) and either restores a saved database from IndexedDB

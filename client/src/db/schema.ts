@@ -87,4 +87,23 @@ export const SCHEMA_SQL = `
     day        INTEGER,        -- 0=Monday..6=Sunday, NULL = unassigned
     cooked     INTEGER NOT NULL DEFAULT 0
   );
-`;
+
+
+  CREATE TABLE IF NOT EXISTS calendar_events (
+    id    TEXT PRIMARY KEY,
+    date  TEXT NOT NULL,   -- ISO yyyy-mm-dd
+    title TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_calendar_events_date ON calendar_events(date);
+
+
+  CREATE TABLE IF NOT EXISTS pantry_items (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    category   TEXT NOT NULL DEFAULT 'Other',
+    qty        TEXT NOT NULL DEFAULT '',
+    unit       TEXT NOT NULL DEFAULT '',
+    note       TEXT NOT NULL DEFAULT '',
+    low_stock  INTEGER NOT NULL DEFAULT 0
+  );
+  `;

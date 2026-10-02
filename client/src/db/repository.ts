@@ -4,7 +4,9 @@ import { guessCategory, addQuantities } from '../utils/ingredients';
 import { mondayOf, todayIso } from '../utils/dates';
 import type {
   Cookbook, CookbookStatus, Recipe, Ingredient, CookingSession,
-  GroceryItem, MealPlan, MealPlanEntry, RecipeEntry
+  GroceryItem, MealPlan, MealPlanEntry, RecipeEntry,
+  CalendarEvent,
+  PantryItem
 } from '../types';
 
 // ============================================================================
@@ -227,26 +229,71 @@ export interface RecipeInput {
 export function createRecipe(cookbookId: string | null, data: RecipeInput): Recipe {
   const id = uid('r');
   const dateAdded = Date.now();
+
   transaction(() => {
     run(
-      `INSERT INTO recipes (id, cookbook_id, name, page, servings, rating, notes, image, favorite, want_to_try, date_added)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, cookbookId, data.name, data.page, data.servings, data.rating, data.notes, data.image,
-        data.favorite ? 1 : 0, data.wantToTry ? 1 : 0, dateAdded]
+      `INSERT INTO recipes (
+        id, cookbook_id, name, page, servings, rating, notes, image,
+        favorite, want_to_try, date_added, instructions, source_url, author
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        cookbookId,
+        data.name,
+        data.page,
+        data.servings,
+        data.rating,
+        data.notes,
+        data.image,
+        data.favorite ? 1 : 0,
+        data.wantToTry ? 1 : 0,
+        dateAdded,
+        JSON.stringify(data.instructions || []),
+        data.sourceUrl || '',
+        data.author || ''
+      ]
     );
+
     replaceRecipeIngredients(id, data.ingredients);
     replaceRecipeTags(id, data.tags);
   });
+
   return getRecipe(id)!;
 }
 
 export function updateRecipe(id: string, data: RecipeInput): void {
   transaction(() => {
     run(
-      `UPDATE recipes SET name=?, page=?, servings=?, rating=?, notes=?, image=?, favorite=?, want_to_try=? WHERE id=?`,
-      [data.name, data.page, data.servings, data.rating, data.notes, data.image,
-        data.favorite ? 1 : 0, data.wantToTry ? 1 : 0, id]
+      `UPDATE recipes SET
+        name=?,
+        page=?,
+        servings=?,
+        rating=?,
+        notes=?,
+        image=?,
+        favorite=?,
+        want_to_try=?,
+        instructions=?,
+        source_url=?,
+        author=?
+      WHERE id=?`,
+      [
+        data.name,
+        data.page,
+        data.servings,
+        data.rating,
+        data.notes,
+        data.image,
+        data.favorite ? 1 : 0,
+        data.wantToTry ? 1 : 0,
+        JSON.stringify(data.instructions || []),
+        data.sourceUrl || '',
+        data.author || '',
+        id
+      ]
     );
+
     replaceRecipeIngredients(id, data.ingredients);
     replaceRecipeTags(id, data.tags);
   });
@@ -379,10 +426,6 @@ export function clearAllGrocery(): void {
 // meal plan
 // ============================================================================
 
-function planEntryRowToEntry(r: PlanEntryRow): MealPlanEntry {
-  return { id: r.id, recipeId: r.recipe_id, day: r.day, cooked: !!r.cooked };
-}
-
 export function getMealPlan(): MealPlan {
   const row = one<{ week_start: string }>(`SELECT week_start FROM meal_plan WHERE id = 1`);
   const weekStart = row?.week_start || mondayOf(new Date());
@@ -391,14 +434,6 @@ export function getMealPlan(): MealPlan {
   }
   const entries = all<PlanEntryRow>(`SELECT * FROM meal_plan_entries ORDER BY rowid ASC`).map(planEntryRowToEntry);
   return { weekStart, entries };
-}
-
-export function addMealPlanEntry(recipeId: string, day: number | null): MealPlanEntry {
-  // ensure the plan row exists so a week is always set
-  getMealPlan();
-  const id = uid('m');
-  run(`INSERT INTO meal_plan_entries (id, recipe_id, day, cooked) VALUES (?, ?, ?, 0)`, [id, recipeId, day]);
-  return { id, recipeId, day, cooked: false };
 }
 
 export function removeMealPlanEntry(entryId: string): void {
@@ -425,7 +460,7 @@ export function markAnyOpenPlanEntryForRecipeCooked(recipeId: string): void {
 
 export function startNewWeek(): MealPlan {
   transaction(() => {
-    run(`DELETE FROM meal_plan_entries`, []);
+    run(`DELETE FROM meal_plan_entries WHERE day IS NULL OR day >= 0`, []);
     run(`INSERT OR REPLACE INTO meal_plan (id, week_start) VALUES (1, ?)`, [mondayOf(new Date())]);
   });
   return getMealPlan();
@@ -465,7 +500,7 @@ export interface ImportSummary {
   addedGrocery: number;
 }
 
-function insertRecipeRaw(cookbookId: string | null, raw: any): void {
+function insertRecipeRaw(cookbookId: string | null, raw: any): string {
   const id = uid('r');
   const dateAdded = typeof raw.dateAdded === 'number' ? raw.dateAdded : Date.now();
   run(
@@ -496,6 +531,7 @@ function insertRecipeRaw(cookbookId: string | null, raw: any): void {
       [uid('c'), id, new Date(dateAdded).toISOString().slice(0, 10), raw.rating || 0, 'Logged before cooking history existed.']
     );
   }
+  return id;
 }
 
 /** Merges a JSON backup (this app's own export, or the older pre-SQL format)
@@ -512,6 +548,7 @@ export function importBackup(parsed: any): ImportSummary {
     const existingBooks = listCookbooks();
     const titleKey = (title: string, author: string) => (title || '').trim().toLowerCase() + '|' + (author || '').trim().toLowerCase();
     const existingByKey = new Map(existingBooks.map((b) => [titleKey(b.title, b.author), b]));
+    const recipeIdMap = new Map<string, string>(); // old recipe id (from the backup) -> new id actually inserted
 
     incoming.forEach((raw) => {
       if (!raw || !raw.title) return;
@@ -524,7 +561,8 @@ export function importBackup(parsed: any): ImportSummary {
           if (!r || !r.name) return;
           const nameKey = r.name.trim().toLowerCase();
           if (haveNames.has(nameKey)) return;
-          insertRecipeRaw(match.id, r);
+          const newId = insertRecipeRaw(match.id, r);
+          if (r.id) recipeIdMap.set(r.id, newId);
           haveNames.add(nameKey);
           summary.addedRecipes++;
         });
@@ -537,7 +575,10 @@ export function importBackup(parsed: any): ImportSummary {
         title: raw.title, author: raw.author || '', cover: raw.cover || '', cuisine: raw.cuisine || '',
         status, rating: raw.rating || 0, notes: raw.notes || ''
       });
-      (Array.isArray(raw.recipes) ? raw.recipes : []).forEach((r: any) => insertRecipeRaw(newBook.id, r));
+      (Array.isArray(raw.recipes) ? raw.recipes : []).forEach((r: any) => {
+        const newId = insertRecipeRaw(newBook.id, r);
+        if (r && r.id) recipeIdMap.set(r.id, newId);
+      });
       existingByKey.set(key, { ...newBook, recipes: [] });
       summary.addedBooks++;
     });
@@ -547,7 +588,8 @@ export function importBackup(parsed: any): ImportSummary {
       if (!r || !r.name) return;
       const nameKey = r.name.trim().toLowerCase();
       if (existingStandaloneNames.has(nameKey)) return;
-      insertRecipeRaw(null, r);
+      const newId = insertRecipeRaw(null, r);
+      if (r.id) recipeIdMap.set(r.id, newId);
       existingStandaloneNames.add(nameKey);
       summary.addedStandalone++;
     });
@@ -569,15 +611,19 @@ export function importBackup(parsed: any): ImportSummary {
         summary.addedGrocery++;
       });
     }
-
     if (parsed.mealPlan && Array.isArray(parsed.mealPlan.entries)) {
       const current = getMealPlan();
       if (current.entries.length === 0) {
         run(`INSERT OR REPLACE INTO meal_plan (id, week_start) VALUES (1, ?)`, [parsed.mealPlan.weekStart || mondayOf(new Date())]);
         parsed.mealPlan.entries.forEach((e: any) => {
           if (!e || !e.recipeId) return;
+          // The recipe this entry pointed to got a brand-new id during this import
+          // (or wasn't imported at all, e.g. it was a duplicate) — remap or drop it,
+          // rather than inserting a dangling reference that trips the FK constraint.
+          const resolvedRecipeId = recipeIdMap.get(e.recipeId) || (getRecipe(e.recipeId) ? e.recipeId : null);
+          if (!resolvedRecipeId) return;
           run(`INSERT INTO meal_plan_entries (id, recipe_id, day, cooked) VALUES (?, ?, ?, ?)`,
-            [uid('m'), e.recipeId, typeof e.day === 'number' ? e.day : null, e.cooked ? 1 : 0]);
+            [uid('m'), resolvedRecipeId, typeof e.day === 'number' ? e.day : null, e.cooked ? 1 : 0]);
         });
       }
     }
@@ -624,4 +670,152 @@ export function findMatchingCookbook(title: string, author: string): Cookbook | 
   return listCookbooks().find(
     (b) => b.title.trim().toLowerCase() === t && (!a || b.author.trim().toLowerCase() === a)
   ) || null;
+}
+
+
+// ============================================================================
+// 1. Find your PlanEntryRow interface and planEntryRowToEntry function.
+//    Add the new column both places:
+// ============================================================================
+
+// Row interface — add `date`:
+interface PlanEntryRow { id: string; recipe_id: string; day: number | null; cooked: number; date: string | null; }
+
+// Mapper — add `date`:
+function planEntryRowToEntry(r: PlanEntryRow): MealPlanEntry {
+  return { id: r.id, recipeId: r.recipe_id, day: r.day, cooked: !!r.cooked, date: r.date };
+}
+
+
+// ============================================================================
+// 2. Update addMealPlanEntry's INSERT to include the new column (defaulting
+//    to NULL for the existing "this week" flow — nothing about its existing
+//    call sites needs to change):
+// ============================================================================
+
+export function addMealPlanEntry(recipeId: string, day: number | null): MealPlanEntry {
+  getMealPlan();
+  const id = uid('m');
+  run(`INSERT INTO meal_plan_entries (id, recipe_id, day, cooked, date) VALUES (?, ?, ?, 0, NULL)`, [id, recipeId, day]);
+  return { id, recipeId, day, cooked: false, date: null };
+}
+
+
+// ============================================================================
+// 3. New function — schedules a recipe on a specific future calendar date,
+//    independent of the current week's day-of-week grid:
+// ============================================================================
+
+export function scheduleRecipeOnDate(recipeId: string, date: string): MealPlanEntry {
+  const id = uid('m');
+  run(`INSERT INTO meal_plan_entries (id, recipe_id, day, cooked, date) VALUES (?, ?, NULL, 0, ?)`, [id, recipeId, date]);
+  return { id, recipeId, day: null, cooked: false, date };
+}
+
+export function setMealPlanEntryDate(entryId: string, date: string | null): void {
+  run(`UPDATE meal_plan_entries SET date=? WHERE id=?`, [date, entryId]);
+}
+
+export function listCalendarPlanEntries(): MealPlanEntry[] {
+  return all<PlanEntryRow>(`SELECT * FROM meal_plan_entries WHERE date IS NOT NULL ORDER BY date ASC`).map(planEntryRowToEntry);
+}
+
+
+// ============================================================================
+// 5. New: calendar events CRUD — add these as new exported functions
+//    anywhere in the file:
+// ============================================================================
+
+interface CalendarEventRow { id: string; date: string; title: string; }
+
+export function listCalendarEvents(): CalendarEvent[] {
+  return all<CalendarEventRow>(`SELECT * FROM calendar_events ORDER BY date ASC`).map((r) => ({ id: r.id, date: r.date, title: r.title }));
+}
+
+export function addCalendarEvent(date: string, title: string): CalendarEvent {
+  const id = uid('e');
+  run(`INSERT INTO calendar_events (id, date, title) VALUES (?, ?, ?)`, [id, date, title]);
+  return { id, date, title };
+}
+
+export function deleteCalendarEvent(id: string): void {
+  run(`DELETE FROM calendar_events WHERE id=?`, [id]);
+}
+
+
+// ============================================================================
+// 6. getMealPlan() itself does NOT need to change — it already
+//    `SELECT * FROM meal_plan_entries` with no WHERE clause, so calendar-
+//    dated entries come along for free. Just make sure `CalendarEvent` is
+//    imported from '../types' at the top of this file (or wherever
+//    MealPlanEntry etc. are already imported from).
+// ============================================================================
+
+
+// ============================================================================
+// Add these anywhere in repository.ts — no changes to any existing function
+// needed. Uses the same `guessCategory` helper your grocery code already has.
+// ============================================================================
+
+interface PantryRow { id: string; name: string; category: string; qty: string; unit: string; note: string; low_stock: number; }
+
+function pantryRowToItem(r: PantryRow): PantryItem {
+  return { id: r.id, name: r.name, category: r.category, qty: r.qty, unit: r.unit, note: r.note, lowStock: !!r.low_stock };
+}
+
+export function listPantryItems(): PantryItem[] {
+  return all<PantryRow>(`SELECT * FROM pantry_items ORDER BY name COLLATE NOCASE ASC`).map(pantryRowToItem);
+}
+
+export interface PantryItemInput { name: string; category?: string; qty: string; unit: string; note: string; }
+
+export function addPantryItem(data: PantryItemInput): PantryItem {
+  const id = uid('p');
+  const category = data.category || guessCategory(data.name);
+  run(
+    `INSERT INTO pantry_items (id, name, category, qty, unit, note, low_stock) VALUES (?, ?, ?, ?, ?, ?, 0)`,
+    [id, data.name, category, data.qty, data.unit, data.note]
+  );
+  return { id, name: data.name, category, qty: data.qty, unit: data.unit, note: data.note, lowStock: false };
+}
+
+export function updatePantryItem(id: string, data: PantryItemInput): void {
+  const category = data.category || guessCategory(data.name);
+  run(
+    `UPDATE pantry_items SET name=?, category=?, qty=?, unit=?, note=? WHERE id=?`,
+    [data.name, category, data.qty, data.unit, data.note, id]
+  );
+}
+
+export function togglePantryLowStock(id: string): void {
+  run(`UPDATE pantry_items SET low_stock = 1 - low_stock WHERE id=?`, [id]);
+}
+
+export function deletePantryItem(id: string): void {
+  run(`DELETE FROM pantry_items WHERE id=?`, [id]);
+}
+
+// Pushes every currently low-stock pantry item onto the grocery list, using
+// the same merge-by-name+unit logic your recipe->grocery flow already has.
+export function sendLowStockToGrocery(): { added: number; merged: number } {
+  const lowItems = listPantryItems().filter((p) => p.lowStock);
+  let added = 0, merged = 0;
+  const tx = transaction(() => {
+    lowItems.forEach((p) => {
+      const key = (name: string, unit: string) => (name || '').trim().toLowerCase() + '|' + (unit || '').trim().toLowerCase();
+      const existing = all<{ id: string; qty: string; unit: string; name: string }>(`SELECT * FROM grocery_items WHERE checked = 0`)
+        .find((g) => key(g.name, g.unit) === key(p.name, p.unit));
+      if (existing) {
+        run(`UPDATE grocery_items SET qty=? WHERE id=?`, [addQuantities(existing.qty, p.qty), existing.id]);
+        merged++;
+      } else {
+        run(
+          `INSERT INTO grocery_items (id, qty, unit, name, note, category, checked, sources) VALUES (?, ?, ?, ?, ?, ?, 0, '[]')`,
+          [uid('g'), p.qty, p.unit, p.name, p.note, p.category]
+        );
+        added++;
+      }
+    });
+  });
+  return { added, merged };
 }

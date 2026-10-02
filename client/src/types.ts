@@ -106,4 +106,92 @@ export interface ShelfFilters {
   sort: ShelfSort;
 }
 
-export type TabName = 'shelf' | 'recipes' | 'plan' | 'grocery';
+export interface AIRecipeSearchResult {
+  recipe_id: string;
+  reason: string;
+}
+
+export interface WebSearchResult {
+  title: string;
+  url: string;
+  description: string;
+  source?: string;
+  thumbnail?: string;
+}
+
+export interface AIRecipeSearchResponse {
+  success: boolean;
+  query: string;
+  results: AIRecipeSearchResult[];
+  web_results?: WebSearchResult[];
+}
+
+export interface CoverageItem {
+  name: string;
+  status: 'strong' | 'some' | 'missing';
+  note: string;
+}
+ 
+export interface RecipeSuggestionAI {
+  name: string;
+  cuisine?: string | null;
+  reason: string;
+}
+ 
+export interface BookRecommendation {
+  title: string;
+  author?: string | null;
+  reason: string;
+  fills_gap: string;
+}
+ 
+export interface CollectionAnalysis {
+  summary: string;
+  cuisines: CoverageItem[];
+  meal_types: CoverageItem[];
+  techniques: CoverageItem[];
+  recipe_suggestions: RecipeSuggestionAI[];
+  book_recommendations: BookRecommendation[];
+}
+ 
+export type TabName = 'shelf' | 'recipes' | 'plan' | 'grocery' | 'pantry';
+
+// Add this new type:
+export interface CalendarEvent {
+  id: string;
+  date: string;   // ISO yyyy-mm-dd
+  title: string;
+}
+
+export interface MealPlanEntry {
+  id: string;
+  recipeId: string;
+  day: number | null;
+  cooked: boolean;
+  date: string | null;
+}
+
+export interface PantryItem {
+  id: string;
+  name: string;
+  category: string;
+  qty: string;
+  unit: string;
+  note: string;
+  lowStock: boolean;
+}
+
+export interface RecipePairing {
+  recipe_id: string;
+  name: string;
+  role: string;
+  reason: string;
+}
+
+export interface MenuCourse {
+  course: string;
+  recipe_id: string | null;
+  name: string;
+  reason: string;
+  in_collection: boolean;
+}

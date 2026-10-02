@@ -463,3 +463,200 @@
   @media (max-width: 760px){
     .topbar{ flex-wrap: wrap; padding: 16px 20px 10px; row-gap: 10px; }
   }
+
+  /* Fixed 7-column week grid — this replaces the old auto-fit .plan-grid rule
+   for the week itself, which is what caused Sunday to wrap onto its own row:
+   auto-fit only adds a track if a full minmax(168px,...) fits, so on a
+   viewport just shy of fitting 7 tracks it silently drops to 6 and wraps
+   the 7th. A fixed 7-column grid shrinks together instead. */
+.week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+/* .plan-grid stays as-is (auto-fit) for the two flexible sections below the
+   week — "Any day this week" and "Beyond this week" — since those have a
+   variable number of cards and wrapping there is fine/expected. */
+
+.plan-section-label {
+  font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--ink-soft); margin: 0 0 8px;
+}
+
+.dropzone-area {
+  min-height: 64px;
+  border-radius: 10px;
+  transition: background .12s ease, box-shadow .12s ease;
+}
+.drop-hover {
+  background: var(--bg-alt);
+  box-shadow: 0 0 0 2px var(--accent) inset;
+}
+.week-grid .plan-day.drop-hover {
+  box-shadow: 0 0 0 2px var(--accent) inset;
+}
+
+.plan-card-top {
+  display: flex; align-items: flex-start; gap: 6px;
+}
+.plan-drag-handle {
+  cursor: grab; color: var(--ink-soft); font-size: 12px; line-height: 1;
+  padding: 2px 4px; margin-top: 1px; flex: none; user-select: none;
+}
+.plan-drag-handle:active { cursor: grabbing; }
+
+.plan-card.dragging { opacity: .35; }
+
+.drag-ghost {
+  background: var(--ink); color: var(--card); font-family: 'Fraunces', serif;
+  font-weight: 600; font-size: 13px; padding: 8px 12px; border-radius: 8px;
+  box-shadow: 0 14px 30px -10px var(--shadow); white-space: nowrap;
+}
+
+/* ---------- cooking-themed AI loading animation ---------- */
+.cooking-loader {
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  padding: 48px 20px; text-align: center;
+}
+.cooking-loader-svg { width: 88px; height: 77px; overflow: visible; }
+.pot-body { fill: var(--ink); }
+.pot-rim { fill: var(--accent); }
+.pot-handle { fill: var(--accent); }
+.pot-shadow { fill: var(--ink); opacity: 0.08; }
+.pot-wobble { transform-origin: 40px 50px; animation: potWobble 2.4s ease-in-out infinite; }
+.steam path {
+  fill: none; stroke: var(--ink-soft); stroke-width: 2.4; stroke-linecap: round;
+  opacity: 0;
+}
+.steam-1 path { animation: steamRise 2.6s ease-in infinite; animation-delay: 0s; }
+.steam-2 path { animation: steamRise 2.6s ease-in infinite; animation-delay: 0.5s; }
+.steam-3 path { animation: steamRise 2.6s ease-in infinite; animation-delay: 1s; }
+ 
+.cooking-loader-label {
+  font-family: 'Fraunces', serif; font-weight: 500; font-size: 14.5px;
+  color: var(--ink-soft); margin: 0; min-height: 1.4em;
+  animation: labelFade 1.8s ease-in-out infinite;
+}
+ 
+@keyframes potWobble {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-2deg); }
+  75% { transform: rotate(2deg); }
+}
+@keyframes steamRise {
+  0% { opacity: 0; transform: translateY(4px) scaleY(0.85); }
+  25% { opacity: 0.9; }
+  80% { opacity: 0.2; }
+  100% { opacity: 0; transform: translateY(-10px) scaleY(1.1); }
+}
+@keyframes labelFade {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; }
+}
+ 
+@media (prefers-reduced-motion: reduce) {
+  .pot-wobble, .steam path, .cooking-loader-label { animation: none !important; }
+  .steam path { opacity: 0.5; }
+}
+
+/* ---------- unified search bar: fast search + Ask AI ---------- */
+.ask-ai-btn {
+  pointer-events: auto; flex: none; display: flex; align-items: center; gap: 6px;
+  padding: 0 16px; height: 46px; border-radius: 100px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--card); color: var(--ink-soft);
+  font-size: 13px; box-shadow: 0 12px 30px -10px var(--shadow);
+  white-space: nowrap;
+}
+.ask-ai-btn:hover { color: var(--ink); border-color: var(--ink-soft); }
+.ask-ai-btn.on { background: var(--ink); color: var(--card); border-color: var(--ink); }
+.ask-ai-btn:disabled { opacity: 0.55; cursor: default; }
+.ask-ai-btn .sparkle { font-size: 13px; }
+ 
+.ai-mode-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  flex-wrap: wrap; margin-bottom: 4px;
+}
+.ai-mode-banner button {
+  border: none; background: none; color: var(--accent); cursor: pointer;
+  font-size: 12.5px; text-decoration: underline;
+}
+.ai-reason {
+  padding: 8px 12px; margin-top: 6px; font-size: 12.5px; line-height: 1.45;
+  border-radius: 8px; background: var(--bg-alt); color: var(--ink-soft);
+  border: 1px solid var(--line);
+}
+
+@media (max-width: 760px) {
+  .week-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 760px) {
+  .ask-ai-btn span.label { display: none; }
+  .ask-ai-btn { padding: 0 12px; }
+}
+
+/* ---------- collection analysis ---------- */
+.coverage-status {
+  display: inline-block; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .05em; font-weight: 600; padding: 3px 9px; border-radius: 100px;
+  margin-bottom: 6px;
+}
+.coverage-status.missing { background: rgba(179, 58, 58, 0.12); color: var(--spine-red); }
+.coverage-status.some { background: var(--bg-alt); color: var(--ink-soft); border: 1px solid var(--line); }
+.coverage-status.strong { background: rgba(76, 120, 90, 0.14); color: var(--spine-forest); }
+ 
+.coverage-row { padding: 4px 0 8px; font-size: 13.5px; }
+.coverage-row b { font-family: 'Fraunces', serif; font-weight: 600; }
+.coverage-note { display: block; font-size: 12.5px; color: var(--ink-soft); line-height: 1.45; margin-top: 2px; }
+
+/* ---------- calendar ---------- */
+.cal-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.cal-month-label { font-family: 'Fraunces', serif; font-weight: 600; font-size: 16px; min-width: 150px; text-align: center; }
+
+.cal-weekday-row { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 4px; }
+.cal-weekday-row span { text-align: center; font-size: 11px; color: var(--ink-soft); text-transform: uppercase; }
+
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-day {
+  aspect-ratio: 1; min-height: 52px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg-alt); cursor: pointer; padding: 5px; text-align: left;
+  display: flex; flex-direction: column; gap: 2px; overflow: hidden;
+}
+.cal-day.outside { opacity: 0.4; }
+.cal-day.today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.cal-day.selected { background: var(--card); box-shadow: 0 0 0 2px var(--ink) inset; }
+.cal-daynum { font-size: 12px; font-weight: 600; color: var(--ink-soft); }
+.cal-day.today .cal-daynum { color: var(--accent); }
+
+.cal-chip {
+  display: block; font-size: 9.5px; padding: 1px 5px; border-radius: 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.cal-chip.event { background: rgba(180,128,43,0.18); color: var(--accent); }
+.cal-chip.recipe { background: rgba(62,90,64,0.14); color: var(--spine-forest); }
+.cal-more { font-size: 9px; color: var(--ink-soft); }
+
+.cal-daypanel { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 14px; }
+.cal-daypanel h3 { font-size: 14.5px; margin: 0 0 10px; }
+.cal-daylist { list-style: none; margin: 0 0 4px; padding: 0; }
+.cal-daylist li { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.cal-daylist li button { border: none; background: none; color: var(--ink-soft); cursor: pointer; font-size: 12px; }
+.cal-daylist .cal-chip { font-size: 12px; padding: 3px 9px; display: inline-block; }
+
+.cal-recipe-matches { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow-y: auto; }
+.cal-recipe-matches button {
+  text-align: left; border: 1px solid var(--line); background: var(--bg-alt); border-radius: 7px;
+  padding: 7px 10px; font-size: 13px; cursor: pointer; color: var(--ink);
+}
+.cal-recipe-matches button:hover { background: var(--card); }
+
+@media (max-width: 600px) {
+  .cal-day { min-height: 42px; }
+  .cal-chip { font-size: 8.5px; }
+}
+
+/* ---------- pantry ---------- */
+.g-item.low-stock .g-text { color: var(--accent); }
+.g-item.low-stock input[type=checkbox] { accent-color: var(--accent); }

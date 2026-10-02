@@ -6,16 +6,19 @@ interface TopBarProps {
   bookCount: number;
   onOpenBackup: () => void;
   onOpenCsv: () => void;
+  onOpenAnalysis: () => void;
+  onOpenMenuPlanner: () => void;
 }
 
 const TABS: { id: TabName; label: string }[] = [
   { id: 'shelf', label: 'Shelf' },
   { id: 'recipes', label: 'Recipes' },
-  { id: 'plan', label: 'This week' },
-  { id: 'grocery', label: 'Grocery' }
+  { id: 'plan', label: 'Plan' },
+  { id: 'grocery', label: 'Grocery' },
+  { id: 'pantry', label: 'Pantry' },
 ];
 
-export function TopBar({ activeTab, onTabChange, bookCount, onOpenBackup, onOpenCsv }: TopBarProps) {
+export function TopBar({ activeTab, onTabChange, bookCount, onOpenBackup, onOpenCsv, onOpenAnalysis, onOpenMenuPlanner }: TopBarProps) {
   return (
     <div className="topbar">
       <div className="brand">
@@ -37,6 +40,8 @@ export function TopBar({ activeTab, onTabChange, bookCount, onOpenBackup, onOpen
       <div className="topbar-right">
         <button type="button" className="toolbar-btn" onClick={onOpenBackup}>Backup</button>
         <button type="button" className="toolbar-btn" onClick={onOpenCsv}>Import CSV</button>
+        <button type="button" className="toolbar-btn" onClick={onOpenAnalysis}>Discover gaps</button>
+        <button type="button" className="toolbar-btn" onClick={onOpenMenuPlanner}>Plan a menu</button>
         <span className="count-pill">{bookCount} book{bookCount === 1 ? '' : 's'}</span>
       </div>
     </div>

@@ -40,14 +40,16 @@ export class ShelfEngine {
   private maxColGen = -1;
   private totalTiles = 0;
 
+  private isActive = true;
   private scrollTicking = false;
   private resizeTimer: ReturnType<typeof setTimeout> | null = null;
   private onScroll = () => {
-    if (this.scrollTicking) return;
+    if (!this.isActive || this.scrollTicking) return;
     this.scrollTicking = true;
     requestAnimationFrame(() => { this.maybeGrow(); this.scrollTicking = false; });
   };
   private onResize = () => {
+    if (!this.isActive) return;
     if (this.resizeTimer) clearTimeout(this.resizeTimer);
     this.resizeTimer = setTimeout(() => this.maybeGrow(), 200);
   };
@@ -57,6 +59,10 @@ export class ShelfEngine {
     this.callbacks = callbacks;
     window.addEventListener('scroll', this.onScroll);
     window.addEventListener('resize', this.onResize);
+  }
+
+  setActive(active: boolean): void {
+    this.isActive = active;
   }
 
   destroy(): void {

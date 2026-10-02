@@ -2,7 +2,8 @@ import { Overlay } from '../common/Overlay';
 import { starStr } from '../../utils/stars';
 import { fmtDate, relDays } from '../../utils/dates';
 import { avgSessionRating, cookCount, effectiveRating, lastCooked } from '../../utils/recipeStats';
-import type { Cookbook, MealPlanEntry, Recipe } from '../../types';
+import type { Cookbook, MealPlanEntry, Recipe, RecipeEntry } from '../../types';
+import { PairingsSection } from './PairingsSection';
 
 interface RecipeViewModalProps {
   show: boolean;
@@ -17,11 +18,13 @@ interface RecipeViewModalProps {
   onToggleFlag: (flag: 'favorite' | 'wantToTry') => void;
   onDeleteSession: (sessionId: string) => void;
   onDeleteRecipe: () => void;
+  entries: RecipeEntry[];
+  onOpenRecipe: (id: string) => void;
 }
 
 export function RecipeViewModal({
   show, recipe: r, book: b, planEntries, onClose, onCook, onAddToPlan, onAddToGrocery,
-  onEdit, onToggleFlag, onDeleteSession, onDeleteRecipe
+  onEdit, onToggleFlag, onDeleteSession, onDeleteRecipe, entries, onOpenRecipe,
 }: RecipeViewModalProps) {
   if (!r) return <Overlay show={show} onClose={onClose}><div /></Overlay>;
 
@@ -96,6 +99,8 @@ export function RecipeViewModal({
           </ol>
         </div>
       )}
+
+      <PairingsSection recipeId={r.id} entries={entries} onOpenRecipe={onOpenRecipe} />
 
       <div className="rv-sec">
         <h3>Cooking history</h3>

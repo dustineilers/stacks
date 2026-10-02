@@ -13,6 +13,7 @@ interface RecipeEditorModalProps {
   show: boolean;
   editingRecipe: Recipe | null;
   initialBookId: string | null;
+  initialImportUrl?: string | null;
   books: Cookbook[];
   allTags: string[];
   onClose: () => void;
@@ -25,7 +26,9 @@ const blankForm = () => ({
   favorite: false, wantToTry: false, tags: [] as string[]
 });
 
-export function RecipeEditorModal({ show, editingRecipe, initialBookId, books, allTags, onClose, onSave, onDelete }: RecipeEditorModalProps) {
+export function RecipeEditorModal({
+  show, editingRecipe, initialBookId, initialImportUrl, books, allTags, onClose, onSave, onDelete
+}: RecipeEditorModalProps) {
   const [form, setForm] = useState(blankForm());
   const [ingredientsText, setIngredientsText] = useState('');
   const [bookId, setBookId] = useState<string>('');
@@ -34,6 +37,22 @@ export function RecipeEditorModal({ show, editingRecipe, initialBookId, books, a
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [instructionsText, setInstructionsText] = useState('');
+
+  const executeImport = async (urlToFetch: string) => {
+    if (!urlToFetch.trim()) return;
+    setImporting(true);
+    setImportError(null);
+    try {
+      const draft = await fetchRecipeFromUrl(urlToFetch.trim());
+      setForm((f) => ({ ...f, name: draft.name || f.name, notes: draft.notes || f.notes, image: draft.image || f.image, servings: draft.servings || f.servings }));
+      setIngredientsText(draft.ingredientsText || '');
+      setInstructionsText(draft.instructionsText || '');
+    } catch (err: any) {
+      setImportError(err.message || 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   useEffect(() => {
     if (!show) return;
@@ -45,29 +64,26 @@ export function RecipeEditorModal({ show, editingRecipe, initialBookId, books, a
       });
       setIngredientsText(editingRecipe.ingredients.map(ingredientToLine).join('\n'));
       setBookId(editingRecipe.cookbookId || '');
+      setInstructionsText(editingRecipe.instructions.join('\n'));
+      setImportUrl('');
     } else {
       setForm(blankForm());
       setIngredientsText('');
+      setInstructionsText('');
       setBookId(initialBookId || '');
+
+      if (initialImportUrl) {
+        setImportUrl(initialImportUrl);
+        executeImport(initialImportUrl);
+      } else {
+        setImportUrl('');
+      }
     }
     setTagInput('');
-  }, [show, editingRecipe, initialBookId]);
-
-  const runImport = async () => {
-    if (!importUrl.trim()) return;
-    setImporting(true);
     setImportError(null);
-    try {
-      const draft = await fetchRecipeFromUrl(importUrl.trim());
-      setForm((f) => ({ ...f, name: draft.name, notes: draft.notes, image: draft.image, servings: draft.servings }));
-      setIngredientsText(draft.ingredientsText);
-      setInstructionsText(draft.instructionsText);
-    } catch (err: any) {
-      setImportError(err.message || 'Import failed');
-    } finally {
-      setImporting(false);
-    }
-  }
+  }, [show, editingRecipe, initialBookId, initialImportUrl]);
+
+  const runImport = () => executeImport(importUrl);
 
   const tagSuggestions = useMemo(() => {
     const used = new Set(form.tags.map((t) => t.toLowerCase()));

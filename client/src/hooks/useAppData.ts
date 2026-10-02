@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { openDatabase, persistNow } from '../db/sqlite';
 import * as repo from '../db/repository';
 import { todayIso } from '../utils/dates';
-import type { Cookbook, Recipe, GroceryItem, MealPlan, RecipeEntry } from '../types';
+import type { Cookbook, Recipe, GroceryItem, MealPlan, RecipeEntry, CalendarEvent, PantryItem } from '../types';
 import type {
   CookbookInput as CookbookInputType, RecipeInput as RecipeInputType,
   CookingSessionInput as CookingSessionInputType
@@ -62,6 +62,19 @@ export interface AppData {
   importBackupJson: (parsed: any) => Promise<repo.ImportSummary>;
 
   retrySave: () => Promise<void>;
+
+  calendarEvents: CalendarEvent[];
+  scheduleRecipeOnDate: (recipeId: string, date: string) => Promise<void>;
+  setEntryDate: (entryId: string, date: string | null) => Promise<void>;
+  addCalendarEvent: (date: string, title: string) => Promise<void>;
+  deleteCalendarEvent: (id: string) => Promise<void>;
+
+  pantry: PantryItem[];
+  addPantryItem: (line: string) => Promise<void>;
+  editPantryItem: (id: string, data: repo.PantryItemInput) => Promise<void>;
+  togglePantryLowStock: (id: string) => Promise<void>;
+  deletePantryItem: (id: string) => Promise<void>;
+  sendLowStockToGrocery: () => Promise<{ added: number; merged: number }>;
 }
 
 export function useAppData(): AppData {
@@ -71,6 +84,8 @@ export function useAppData(): AppData {
   const [standaloneRecipes, setStandaloneRecipes] = useState<Recipe[]>([]);
   const [grocery, setGrocery] = useState<GroceryItem[]>([]);
   const [mealPlan, setMealPlan] = useState<MealPlan>({ weekStart: '', entries: [] });
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [pantry, setPantry] = useState<PantryItem[]>([]);
 
   const booksRef = useRef(books);
   booksRef.current = books;
@@ -84,6 +99,8 @@ export function useAppData(): AppData {
 
   const refreshGrocery = useCallback(() => setGrocery(repo.listGrocery()), []);
   const refreshPlan = useCallback(() => setMealPlan(repo.getMealPlan()), []);
+  const refreshCalendarEvents = useCallback(() => setCalendarEvents(repo.listCalendarEvents()), []);
+  const refreshPantry = useCallback(() => setPantry(repo.listPantryItems()), []);
 
   const persistAndCheck = useCallback(async () => {
     const ok = await persistNow();
@@ -98,6 +115,7 @@ export function useAppData(): AppData {
       refreshRecipes();
       refreshGrocery();
       refreshPlan();
+      refreshCalendarEvents();
       setReady(true);
     })();
     return () => { cancelled = true; };
@@ -288,6 +306,30 @@ export function useAppData(): AppData {
     return count;
   }, [locateRecipeEntry, refreshGrocery, persistAndCheck]);
 
+  const scheduleRecipeOnDate = useCallback(async (recipeId: string, date: string) => {
+    repo.scheduleRecipeOnDate(recipeId, date);
+    refreshPlan();
+    await persistAndCheck();
+  }, [refreshPlan, persistAndCheck]);
+  
+  const setEntryDate = useCallback(async (entryId: string, date: string | null) => {
+    repo.setMealPlanEntryDate(entryId, date);
+    refreshPlan();
+    await persistAndCheck();
+  }, [refreshPlan, persistAndCheck]);
+  
+  const addCalendarEvent = useCallback(async (date: string, title: string) => {
+    repo.addCalendarEvent(date, title);
+    refreshCalendarEvents();
+    await persistAndCheck();
+  }, [refreshCalendarEvents, persistAndCheck]);
+  
+  const deleteCalendarEvent = useCallback(async (id: string) => {
+    repo.deleteCalendarEvent(id);
+    refreshCalendarEvents();
+    await persistAndCheck();
+  }, [refreshCalendarEvents, persistAndCheck]);
+
   // ---------------- csv / backup ----------------
 
   const importCsvGroups = useCallback(async (groups: CsvGroup[]) => {
@@ -310,6 +352,40 @@ export function useAppData(): AppData {
 
   const retrySave = useCallback(async () => { await persistAndCheck(); }, [persistAndCheck]);
 
+  const addPantryItem = useCallback(async (line: string) => {
+  const { parseIngredientLine } = await import('../utils/ingredients');
+  const parsed = parseIngredientLine(line);
+    if (!parsed) return;
+    repo.addPantryItem(parsed);
+    refreshPantry();
+    await persistAndCheck();
+  }, [refreshPantry, persistAndCheck]);
+ 
+  const editPantryItem = useCallback(async (id: string, data: repo.PantryItemInput) => {
+    repo.updatePantryItem(id, data);
+    refreshPantry();
+    await persistAndCheck();
+  }, [refreshPantry, persistAndCheck]);
+  
+  const togglePantryLowStock = useCallback(async (id: string) => {
+    repo.togglePantryLowStock(id);
+    refreshPantry();
+    await persistAndCheck();
+  }, [refreshPantry, persistAndCheck]);
+  
+  const deletePantryItem = useCallback(async (id: string) => {
+    repo.deletePantryItem(id);
+    refreshPantry();
+    await persistAndCheck();
+  }, [refreshPantry, persistAndCheck]);
+  
+  const sendLowStockToGrocery = useCallback(async () => {
+    const result = repo.sendLowStockToGrocery();
+    refreshGrocery(); // your existing grocery refresh function
+    await persistAndCheck();
+    return result;
+  }, [refreshGrocery, persistAndCheck]);
+
   return {
     ready, saveError, books, standaloneRecipes, grocery, mealPlan,
     getAllRecipeEntries, locateRecipeEntry, allTags,
@@ -319,7 +395,13 @@ export function useAppData(): AppData {
     addRecipeToGrocery, addManualGroceryItem, toggleGroceryItem, deleteGroceryItem, clearCheckedGrocery, clearAllGrocery,
     addToMealPlan, removePlanEntry, setPlanDay, startNewWeek, sendWeekToGrocery,
     importCsvGroups, exportBackup, importBackupJson,
-    retrySave
+    retrySave,
+    calendarEvents,
+    scheduleRecipeOnDate,
+    setEntryDate,
+    addCalendarEvent,
+    deleteCalendarEvent,
+    pantry, addPantryItem, editPantryItem, togglePantryLowStock, deletePantryItem, sendLowStockToGrocery
   };
 }
 

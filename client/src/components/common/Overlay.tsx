@@ -6,6 +6,7 @@ interface OverlayProps {
   children: ReactNode;
   modalStyle?: CSSProperties;
   closeButton?: boolean;
+  zIndex?: number;
 }
 
 export function Overlay({ show, onClose, children, modalStyle, closeButton = true }: OverlayProps) {
