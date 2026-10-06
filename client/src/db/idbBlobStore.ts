@@ -46,3 +46,14 @@ export async function saveBlob(key: string, bytes: Uint8Array): Promise<boolean>
     return false;
   }
 }
+
+/** Small string values (sync ETag, dirty flag) stored in the same object
+ *  store as the database blob — no separate schema needed. */
+export async function loadMeta(key: string): Promise<string | null> {
+  const bytes = await loadBlob(key);
+  return bytes ? new TextDecoder().decode(bytes) : null;
+}
+
+export async function saveMeta(key: string, value: string): Promise<boolean> {
+  return saveBlob(key, new TextEncoder().encode(value));
+}

@@ -3,3 +3,10 @@ dist
 .DS_Store
 *.local
 backend/.env
+backend/data/
+certs/
+.venv/
+__pycache__/
+*.pyc
+backups/
+downloads/

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { openDatabase, persistNow } from '../db/sqlite';
+import { openDatabase, persistNow, syncWithServer, resolveSyncConflict, getSyncStatus, onSyncStatusChange, type SyncStatus } from '../db/sqlite';
 import * as repo from '../db/repository';
 import { todayIso } from '../utils/dates';
-import type { Cookbook, Recipe, GroceryItem, MealPlan, RecipeEntry, CalendarEvent, PantryItem } from '../types';
+import type { Cookbook, Recipe, GroceryItem, MealPlan, RecipeEntry, CalendarEvent, PantryItem, Menu } from '../types';
 import type {
   CookbookInput as CookbookInputType, RecipeInput as RecipeInputType,
   CookingSessionInput as CookingSessionInputType
@@ -16,6 +16,9 @@ export type CookingSessionInput = CookingSessionInputType;
 export interface AppData {
   ready: boolean;
   saveError: boolean;
+  syncStatus: SyncStatus;
+  resolveSyncConflict: (choice: 'keepLocal' | 'useServer') => Promise<void>;
+  syncNow: () => Promise<SyncStatus>;
 
   books: Cookbook[];
   standaloneRecipes: Recipe[];
@@ -75,6 +78,18 @@ export interface AppData {
   togglePantryLowStock: (id: string) => Promise<void>;
   deletePantryItem: (id: string) => Promise<void>;
   sendLowStockToGrocery: () => Promise<{ added: number; merged: number }>;
+
+  menus: Menu[];
+  createMenu: (title: string, context: string, courseNames: string[]) => Promise<Menu>;
+  deleteMenu: (id: string) => Promise<void>;
+  updateMenuContext: (id: string, title: string, context: string) => Promise<void>;
+  addMenuSlot: (menuId: string, course: string) => Promise<void>;
+  removeMenuSlot: (slotId: string) => Promise<void>;
+  updateMenuSlotCourse: (slotId: string, course: string) => Promise<void>;
+  setMenuSlotRecipe: (slotId: string, recipeId: string | null) => Promise<void>;
+  setMenuSlotSuggestion: (slotId: string, name: string, reason: string) => Promise<void>;
+  setMenuSlotLocked: (slotId: string, locked: boolean) => Promise<void>;
+  clearMenuSlot: (slotId: string) => Promise<void>;
 }
 
 export function useAppData(): AppData {
@@ -86,6 +101,8 @@ export function useAppData(): AppData {
   const [mealPlan, setMealPlan] = useState<MealPlan>({ weekStart: '', entries: [] });
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [pantry, setPantry] = useState<PantryItem[]>([]);
+  const [menus, setMenus] = useState<Menu[]>([]);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus());
 
   const booksRef = useRef(books);
   booksRef.current = books;
@@ -101,6 +118,16 @@ export function useAppData(): AppData {
   const refreshPlan = useCallback(() => setMealPlan(repo.getMealPlan()), []);
   const refreshCalendarEvents = useCallback(() => setCalendarEvents(repo.listCalendarEvents()), []);
   const refreshPantry = useCallback(() => setPantry(repo.listPantryItems()), []);
+  const refreshMenus = useCallback(() => setMenus(repo.listMenus()), []);
+
+  const refreshAll = useCallback(() => {
+    refreshRecipes();
+    refreshGrocery();
+    refreshPlan();
+    refreshCalendarEvents();
+    refreshPantry();
+    refreshMenus();
+  }, [refreshRecipes, refreshGrocery, refreshPlan, refreshCalendarEvents, refreshPantry, refreshMenus]);
 
   const persistAndCheck = useCallback(async () => {
     const ok = await persistNow();
@@ -112,15 +139,31 @@ export function useAppData(): AppData {
     (async () => {
       await openDatabase();
       if (cancelled) return;
-      refreshRecipes();
-      refreshGrocery();
-      refreshPlan();
-      refreshCalendarEvents();
+      refreshAll();
       setReady(true);
+
+      // LAN sync happens separately, in the background, so a slow or
+      // unreachable backend never delays showing the app with local data.
+      void syncWithServer().then(() => {
+        if (!cancelled) refreshAll();
+      });
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => onSyncStatusChange(setSyncStatus), []);
+
+  const handleResolveSyncConflict = useCallback(async (choice: 'keepLocal' | 'useServer') => {
+    await resolveSyncConflict(choice);
+    refreshAll();
+  }, [refreshAll]);
+
+  const syncNow = useCallback(async () => {
+    const result = await syncWithServer();
+    refreshAll();
+    return result;
+  }, [refreshAll]);
 
   const getAllRecipeEntries = useCallback((): RecipeEntry[] => {
     const entries: RecipeEntry[] = [];
@@ -386,8 +429,72 @@ export function useAppData(): AppData {
     return result;
   }, [refreshGrocery, persistAndCheck]);
 
+  // ---------------- menus ----------------
+
+  const createMenu = useCallback(async (title: string, context: string, courseNames: string[]) => {
+    const menu = repo.createMenu(title, context, courseNames);
+    refreshMenus();
+    await persistAndCheck();
+    return menu;
+  }, [refreshMenus, persistAndCheck]);
+
+  const deleteMenu = useCallback(async (id: string) => {
+    repo.deleteMenu(id);
+    refreshMenus();
+    await persistAndCheck();
+  }, [refreshMenus, persistAndCheck]);
+
+  const updateMenuContext = useCallback(async (id: string, title: string, context: string) => {
+    repo.updateMenuContext(id, title, context);
+    refreshMenus();
+    await persistAndCheck();
+  }, [refreshMenus, persistAndCheck]);
+
+  const addMenuSlot = useCallback(async (menuId: string, course: string) => {
+    repo.addMenuSlot(menuId, course);
+    refreshMenus();
+    await persistAndCheck();
+  }, [refreshMenus, persistAndCheck]);
+
+  const removeMenuSlot = useCallback(async (slotId: string) => {
+    repo.removeMenuSlot(slotId);
+    refreshMenus();
+    await persistAndCheck();
+  }, [refreshMenus, persistAndCheck]);
+
+  const updateMenuSlotCourse = useCallback(async (slotId: string, course: string) => {
+    repo.updateMenuSlotCourse(slotId, course);
+    refreshMenus();
+    await persistAndCheck();
+  }, [refreshMenus, persistAndCheck]);
+
+  const setMenuSlotRecipe = useCallback(async (slotId: string, recipeId: string | null) => {
+    repo.setMenuSlotRecipe(slotId, recipeId);
+    refreshMenus();
+    await persistAndCheck();
+  }, [refreshMenus, persistAndCheck]);
+
+  const setMenuSlotSuggestion = useCallback(async (slotId: string, name: string, reason: string) => {
+    repo.setMenuSlotSuggestion(slotId, name, reason);
+    refreshMenus();
+    await persistAndCheck();
+  }, [refreshMenus, persistAndCheck]);
+
+  const setMenuSlotLocked = useCallback(async (slotId: string, locked: boolean) => {
+    repo.setMenuSlotLocked(slotId, locked);
+    refreshMenus();
+    await persistAndCheck();
+  }, [refreshMenus, persistAndCheck]);
+
+  const clearMenuSlot = useCallback(async (slotId: string) => {
+    repo.clearMenuSlot(slotId);
+    refreshMenus();
+    await persistAndCheck();
+  }, [refreshMenus, persistAndCheck]);
+
   return {
-    ready, saveError, books, standaloneRecipes, grocery, mealPlan,
+    ready, saveError, syncStatus, resolveSyncConflict: handleResolveSyncConflict, syncNow,
+    books, standaloneRecipes, grocery, mealPlan,
     getAllRecipeEntries, locateRecipeEntry, allTags,
     addCookbook, editCookbook, removeCookbook,
     addRecipe, editRecipe, removeRecipe, toggleRecipeFlag,
@@ -401,7 +508,9 @@ export function useAppData(): AppData {
     setEntryDate,
     addCalendarEvent,
     deleteCalendarEvent,
-    pantry, addPantryItem, editPantryItem, togglePantryLowStock, deletePantryItem, sendLowStockToGrocery
+    pantry, addPantryItem, editPantryItem, togglePantryLowStock, deletePantryItem, sendLowStockToGrocery,
+    menus, createMenu, deleteMenu, updateMenuContext, addMenuSlot, removeMenuSlot, updateMenuSlotCourse,
+    setMenuSlotRecipe, setMenuSlotSuggestion, setMenuSlotLocked, clearMenuSlot
   };
 }
 

@@ -106,4 +106,23 @@ export const SCHEMA_SQL = `
     note       TEXT NOT NULL DEFAULT '',
     low_stock  INTEGER NOT NULL DEFAULT 0
   );
+
+  CREATE TABLE IF NOT EXISTS menus (
+    id          TEXT PRIMARY KEY,
+    title       TEXT NOT NULL DEFAULT '',
+    context     TEXT NOT NULL DEFAULT '',
+    date_added  INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS menu_slots (
+    id                 TEXT PRIMARY KEY,
+    menu_id            TEXT NOT NULL REFERENCES menus(id) ON DELETE CASCADE,
+    position           INTEGER NOT NULL DEFAULT 0,
+    course             TEXT NOT NULL DEFAULT '',
+    recipe_id          TEXT REFERENCES recipes(id) ON DELETE SET NULL,
+    locked             INTEGER NOT NULL DEFAULT 0,
+    suggestion_name    TEXT NOT NULL DEFAULT '',
+    suggestion_reason  TEXT NOT NULL DEFAULT ''
+  );
+  CREATE INDEX IF NOT EXISTS idx_menu_slots_menu ON menu_slots(menu_id);
   `;

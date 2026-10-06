@@ -18,8 +18,7 @@ import { filterAndSortRecipeEntries } from './utils/recipeFilters';
 import { CollectionAnalysisModal } from './components/Analysis/CollectionAnalysisModal';
 import type { RecipeFilters, ShelfFilters, TabName, AIRecipeSearchResult, WebSearchResult } from './types';
 import { CalendarModal } from './components/Plan/CalendarModal';
-import { PantryView } from './components/Pantry/PantryView';
-import { MenuPlannerModal } from './components/Menu/MenuPlannerModal';
+import { MenuView } from './components/Menu/MenuView';
 
 const BLANK_RECIPE_FILTERS: RecipeFilters = { book: 'all', tags: [], status: 'all', rating: 0, sort: 'recent' };
 const BLANK_SHELF_FILTERS: ShelfFilters = { status: 'all', sort: 'recent' };
@@ -33,6 +32,23 @@ export default function App() {
   const data = useAppDataContext();
 
   const [activeTab, setActiveTab] = useState<TabName>('shelf');
+
+  // Leaving the shelf: reset the real window scroll position BEFORE React
+  // hides its canvas. The shelf's infinite-scroll illusion works by scrolling
+  // the actual document out to ~1,000,000px (see ShelfEngine's CENTER_Y);
+  // collapsing that document back down via display:none while the browser's
+  // scroll position is still sitting out there is what was crashing mobile
+  // Safari every time you left this tab. Doing the scroll reset first,
+  // synchronously, in the same user gesture, means the browser never has to
+  // collapse a million-pixel document and reclamp an out-of-range scroll
+  // position in the same step — by the time React applies display:none, the
+  // scroll position is already sane.
+  const changeTab = (next: TabName) => {
+    if (activeTab === 'shelf' && next !== 'shelf') {
+      window.scrollTo(0, 0);
+    }
+    setActiveTab(next);
+  };
   const [searchTerm, setSearchTerm] = useState('');
   const [shelfFilters, setShelfFilters] = useState<ShelfFilters>(BLANK_SHELF_FILTERS);
   const [recipeFilters, setRecipeFilters] = useState<RecipeFilters>(BLANK_RECIPE_FILTERS);
@@ -55,13 +71,12 @@ export default function App() {
   const [aiResults, setAiResults] = useState<AIRecipeSearchResult[]>([]);
   const [webResults, setWebResults] = useState<WebSearchResult[]>([]);
   const [analysisOpen, setAnalysisOpen] = useState(false);
-  const [menuPlannerOpen, setMenuPlannerOpen] = useState(false);
 
 
 
   const [toast, setToast] = useState<{ message: string; isError?: boolean } | null>(null);
-  const flash = (message: string) => {
-    setToast({ message });
+  const flash = (message: string, isError?: boolean) => {
+    setToast({ message, isError });
     setTimeout(() => setToast((t) => (t?.message === message ? null : t)), 2600);
   };
 
@@ -165,7 +180,8 @@ export default function App() {
    const handleAddButtonClick = () => {
      if (activeTab === 'recipes') setRecipeEditor({ recipeId: null, bookId: null });
      else if (activeTab === 'grocery') document.getElementById('g-new')?.focus();
-     else if (activeTab === 'plan') setActiveTab('recipes');
+     else if (activeTab === 'plan') changeTab('recipes');
+     else if (activeTab === 'menu') { /* use the "+ New menu" button in the Menu tab itself */ }
      else setBookForm({ bookId: null });
    };
 
@@ -188,12 +204,18 @@ export default function App() {
     <>
       <TopBar
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={changeTab}
         bookCount={data.books.length}
+        syncStatus={data.syncStatus}
+        onSyncNow={async () => {
+          const result = await data.syncNow();
+          if (result === 'synced') flash('Synced.');
+          else if (result === 'offline') flash("Can't reach the shared backend right now.", true);
+          else if (result === 'conflict') flash('This device and the shared copy both have changes — pick which to keep below.', true);
+        }}
         onOpenBackup={() => setBackupOpen(true)}
         onOpenCsv={() => setCsvOpen(true)}
         onOpenAnalysis={() => setAnalysisOpen(true)}
-        onOpenMenuPlanner={() => setMenuPlannerOpen(true)}
       />
 
       <Toast
@@ -202,6 +224,14 @@ export default function App() {
         onRetry={data.saveError ? data.retrySave : undefined}
         onDismiss={() => { setToast(null); }}
       />
+
+      {data.syncStatus === 'conflict' && (
+        <div className="save-warning" style={{ display: 'flex', top: data.saveError ? 112 : 66 }}>
+          <span>This device has changes made while offline, and the shared copy has changed elsewhere too — pick which one to keep.</span>
+          <button type="button" className="btn small" onClick={() => data.resolveSyncConflict('keepLocal')}>Keep this device's changes</button>
+          <button type="button" className="btn small" onClick={() => data.resolveSyncConflict('useServer')}>Use the shared copy</button>
+        </div>
+      )}
 
       <ShelfView
         active={activeTab === 'shelf'}
@@ -247,8 +277,27 @@ export default function App() {
           onSetDay={data.setPlanDay}
           onStartNewWeek={data.startNewWeek}
           onSendToGrocery={async () => { const n = await data.sendWeekToGrocery(); flash(n ? `Ingredients from ${n} recipe${n === 1 ? '' : 's'} added to your grocery list.` : "None of this week's recipes have ingredients yet."); }}
-          onBrowseRecipes={() => setActiveTab('recipes')}
+          onBrowseRecipes={() => changeTab('recipes')}
           onOpenCalendar={() => setCalendarOpen(true)} 
+        />
+      )}
+
+      {activeTab === 'menu' && (
+        <MenuView
+          menus={data.menus}
+          entries={entries}
+          onOpenRecipe={setRecipeViewId}
+          onCreateMenu={data.createMenu}
+          onDeleteMenu={data.deleteMenu}
+          onUpdateMenuContext={data.updateMenuContext}
+          onAddSlot={data.addMenuSlot}
+          onRemoveSlot={data.removeMenuSlot}
+          onUpdateSlotCourse={data.updateMenuSlotCourse}
+          onAssignSlotRecipe={data.setMenuSlotRecipe}
+          onSetSlotSuggestion={data.setMenuSlotSuggestion}
+          onToggleSlotLocked={data.setMenuSlotLocked}
+          onClearSlot={data.clearMenuSlot}
+          onAddFilledToPlan={addMenuToPlan}
         />
       )}
 
@@ -260,6 +309,12 @@ export default function App() {
           onDelete={data.deleteGroceryItem}
           onClearChecked={data.clearCheckedGrocery}
           onClearAll={data.clearAllGrocery}
+          pantryItems={data.pantry}
+          onPantryAdd={data.addPantryItem}
+          onPantryEdit={data.editPantryItem}
+          onPantryToggleLowStock={data.togglePantryLowStock}
+          onPantryDelete={data.deletePantryItem}
+          onSendLowStockToGrocery={data.sendLowStockToGrocery}
         />
       )}
 
@@ -297,18 +352,14 @@ export default function App() {
         </div>
       )}
 
-      {activeTab === 'pantry' && (
-        <PantryView
-          items={data.pantry}
-          onAdd={data.addPantryItem}
-          onEdit={data.editPantryItem}
-          onToggleLowStock={data.togglePantryLowStock}
-          onDelete={data.deletePantryItem}
-          onSendLowStockToGrocery={data.sendLowStockToGrocery}
-        />
-      )}
-
-      <button className="addbtn" onClick={handleAddButtonClick} aria-label="Add">+</button>
+      {/* Lifted clear of the bottom search bar on the tabs that have one —
+          on a phone they otherwise sit on top of each other and taps land on
+          the wrong control. */}
+      <button
+        className={`addbtn${activeTab === 'shelf' || activeTab === 'recipes' ? ' above-bottombar' : ''}`}
+        onClick={handleAddButtonClick}
+        aria-label="Add"
+      >+</button>
 
       <BookDetailModal
         show={!!detailBook}
@@ -398,14 +449,6 @@ export default function App() {
         onUnschedule={data.removePlanEntry}
         onAddEvent={data.addCalendarEvent}
         onDeleteEvent={data.deleteCalendarEvent}
-      />
-
-      <MenuPlannerModal
-        show={menuPlannerOpen}
-        entries={entries}
-        onClose={() => setMenuPlannerOpen(false)}
-        onOpenRecipe={setRecipeViewId}
-        onAddMenuToPlan={addMenuToPlan}
       />
 
       <CsvImportModal show={csvOpen} books={data.books} onClose={() => setCsvOpen(false)} onImport={data.importCsvGroups} />

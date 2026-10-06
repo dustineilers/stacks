@@ -6,7 +6,8 @@ import type {
   Cookbook, CookbookStatus, Recipe, Ingredient, CookingSession,
   GroceryItem, MealPlan, MealPlanEntry, RecipeEntry,
   CalendarEvent,
-  PantryItem
+  PantryItem,
+  Menu, MenuSlot
 } from '../types';
 
 // ============================================================================
@@ -818,4 +819,96 @@ export function sendLowStockToGrocery(): { added: number; merged: number } {
     });
   });
   return { added, merged };
+}
+
+// ============================================================================
+// menus (course-based menu planning)
+// ============================================================================
+
+interface MenuRow { id: string; title: string; context: string; date_added: number; }
+interface MenuSlotRow {
+  id: string; menu_id: string; position: number; course: string; recipe_id: string | null;
+  locked: number; suggestion_name: string; suggestion_reason: string;
+}
+
+function slotsForMenu(menuId: string): MenuSlot[] {
+  return all<MenuSlotRow>(`SELECT * FROM menu_slots WHERE menu_id=? ORDER BY position ASC`, [menuId]).map((r) => ({
+    id: r.id, course: r.course, recipeId: r.recipe_id, locked: !!r.locked,
+    suggestionName: r.suggestion_name, suggestionReason: r.suggestion_reason
+  }));
+}
+
+function assembleMenu(row: MenuRow): Menu {
+  return { id: row.id, title: row.title, context: row.context, dateAdded: row.date_added, slots: slotsForMenu(row.id) };
+}
+
+export function listMenus(): Menu[] {
+  return all<MenuRow>(`SELECT * FROM menus ORDER BY date_added DESC`).map(assembleMenu);
+}
+
+export function getMenu(id: string): Menu | null {
+  const row = one<MenuRow>(`SELECT * FROM menus WHERE id=?`, [id]);
+  return row ? assembleMenu(row) : null;
+}
+
+export function createMenu(title: string, context: string, courseNames: string[]): Menu {
+  const id = uid('mn');
+  const dateAdded = Date.now();
+  transaction(() => {
+    run(`INSERT INTO menus (id, title, context, date_added) VALUES (?, ?, ?, ?)`, [id, title, context, dateAdded]);
+    courseNames.forEach((course, idx) => {
+      run(
+        `INSERT INTO menu_slots (id, menu_id, position, course, recipe_id, locked, suggestion_name, suggestion_reason)
+         VALUES (?, ?, ?, ?, NULL, 0, '', '')`,
+        [uid('ms'), id, idx, course]
+      );
+    });
+  });
+  return getMenu(id)!;
+}
+
+export function deleteMenu(id: string): void {
+  run(`DELETE FROM menus WHERE id=?`, [id]);
+}
+
+export function updateMenuContext(id: string, title: string, context: string): void {
+  run(`UPDATE menus SET title=?, context=? WHERE id=?`, [title, context, id]);
+}
+
+export function addMenuSlot(menuId: string, course: string): MenuSlot {
+  const id = uid('ms');
+  const row = one<{ maxPos: number | null }>(`SELECT MAX(position) AS maxPos FROM menu_slots WHERE menu_id=?`, [menuId]);
+  const position = (row?.maxPos ?? -1) + 1;
+  run(
+    `INSERT INTO menu_slots (id, menu_id, position, course, recipe_id, locked, suggestion_name, suggestion_reason)
+     VALUES (?, ?, ?, ?, NULL, 0, '', '')`,
+    [id, menuId, position, course]
+  );
+  return { id, course, recipeId: null, locked: false, suggestionName: '', suggestionReason: '' };
+}
+
+export function removeMenuSlot(slotId: string): void {
+  run(`DELETE FROM menu_slots WHERE id=?`, [slotId]);
+}
+
+export function updateMenuSlotCourse(slotId: string, course: string): void {
+  run(`UPDATE menu_slots SET course=? WHERE id=?`, [course, slotId]);
+}
+
+/** Assigning a real recipe clears any AI suggestion placeholder — the slot is settled now. */
+export function setMenuSlotRecipe(slotId: string, recipeId: string | null): void {
+  run(`UPDATE menu_slots SET recipe_id=?, suggestion_name='', suggestion_reason='' WHERE id=?`, [recipeId, slotId]);
+}
+
+/** Only ever fills a slot that doesn't already have a real recipe assigned. */
+export function setMenuSlotSuggestion(slotId: string, name: string, reason: string): void {
+  run(`UPDATE menu_slots SET suggestion_name=?, suggestion_reason=? WHERE id=? AND recipe_id IS NULL`, [name, reason, slotId]);
+}
+
+export function setMenuSlotLocked(slotId: string, locked: boolean): void {
+  run(`UPDATE menu_slots SET locked=? WHERE id=?`, [locked ? 1 : 0, slotId]);
+}
+
+export function clearMenuSlot(slotId: string): void {
+  run(`UPDATE menu_slots SET recipe_id=NULL, suggestion_name='', suggestion_reason='' WHERE id=?`, [slotId]);
 }

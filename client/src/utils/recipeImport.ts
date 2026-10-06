@@ -1,3 +1,5 @@
+import { aiEndpoint } from './aiCatalog';
+
 export interface RecipeImportDraft {
   name: string;
   author: string;
@@ -10,7 +12,7 @@ export interface RecipeImportDraft {
 }
 
 export async function fetchRecipeFromUrl(url: string): Promise<RecipeImportDraft> {
-  const res = await fetch('http://localhost:8000/api/import/recipe', {
+  const res = await fetch(aiEndpoint('/api/import/recipe'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url })

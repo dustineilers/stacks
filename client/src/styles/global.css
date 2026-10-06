@@ -19,6 +19,11 @@
     --status-cooking: #253A54;
     --status-favorite: #7C3232;
     --status-reference: #3E5A40;
+
+    /* Measured and published by TopBar at runtime (it wraps to more rows on
+       narrow screens). Views offset their content by this rather than each
+       hard-coding a guess. The fallback only applies for the first paint. */
+    --topbar-h: 92px;
   }
 
   *{ box-sizing: border-box; }
@@ -44,7 +49,10 @@
     position: fixed; top:0; left:0; right:0; z-index: 20;
     display:flex; align-items:center; justify-content: space-between;
     padding: 20px 48px 14px;
-    background: linear-gradient(to bottom, var(--bg) 75%, transparent);
+    /* Solid behind everything the bar actually contains, fading only in the
+       padding below it. At 75% the wrapped controls row on a phone landed in
+       the transparent part and appeared to float loose over the page. */
+    background: linear-gradient(to bottom, var(--bg) 90%, transparent);
     pointer-events: none;
     gap: 16px;
   }
@@ -75,8 +83,23 @@
   }
   .toolbar-btn:hover{ border-color: var(--ink-soft); }
 
+  .more-menu{ position: relative; pointer-events: auto; }
+  .more-menu-list{
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 25;
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 6px; display: flex; flex-direction: column; gap: 2px; min-width: 150px;
+    box-shadow: 0 16px 34px -12px var(--shadow);
+  }
+  .more-menu-list button{
+    text-align: left; border: none; background: none; color: var(--ink);
+    padding: 8px 10px; border-radius: 7px; font-size: 13px; cursor: pointer; white-space: nowrap;
+  }
+  .more-menu-list button:hover{ background: var(--bg-alt); }
+  .more-menu-list button:disabled{ opacity: 0.55; cursor: default; }
+  .more-menu-list button:disabled:hover{ background: none; }
+
   .save-warning{
-    position: fixed; top: 66px; left: 50%; transform: translateX(-50%);
+    position: fixed; top: calc(var(--topbar-h) + 8px); left: 50%; transform: translateX(-50%);
     z-index: 40; display:flex; align-items:center; gap:10px;
     background: #FBEFE6; border: 1px solid var(--spine-red);
     color: var(--spine-red); font-size: 12.5px;
@@ -88,6 +111,13 @@
   .save-warning .close-x{ border:none; background:none; color: var(--spine-red); cursor:pointer; font-size: 13px; padding: 0 2px; }
 
   /* ---------- Omnidirectional masonry canvas ---------- */
+  /* Isolated scroll container for the shelf's infinite canvas — scrolling
+     happens here, not on the real page, so the virtual canvas's huge
+     coordinate space never affects the document itself. */
+  .shelf-viewport{
+    position: fixed; inset: 0; z-index: 1;
+    overflow: auto; -webkit-overflow-scrolling: touch;
+  }
   .canvas{ position: relative; }
 
   .tile{
@@ -298,7 +328,7 @@
   /* ---------- recipe cards ---------- */
   .result-line{ font-size:12px; color: var(--ink-soft); }
   .result-line button{ border:none; background:none; color: var(--accent); cursor:pointer; font-size:12px; text-decoration:underline; }
-  .recipes-top{ max-width: 1560px; margin: 0 auto; padding: 118px 32px 0; }
+  .recipes-top{ max-width: 1560px; margin: 0 auto; padding: calc(var(--topbar-h) + 26px) 32px 0; }
   .recipe-cards{ max-width: 1560px; margin:0 auto; padding: 14px 32px 150px; display:grid; grid-template-columns: repeat(auto-fill, minmax(196px,1fr)); gap:18px; }
   .rcard{
     background: var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden;
@@ -349,10 +379,16 @@
 
 
   /* ---------- grocery ---------- */
-  .grocery-wrap{ max-width: 700px; margin:0 auto; padding: 130px 24px 150px; }
+  .grocery-wrap{ max-width: 700px; margin:0 auto; padding: calc(var(--topbar-h) + 38px) 24px 150px; }
   .grocery-head{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
   .grocery-head h2{ margin:0; font-size:26px; }
   .grocery-head .sub{ font-size:12.5px; color: var(--ink-soft); }
+  .grocery-tabs{ display:flex; gap:6px; margin-bottom:14px; }
+  .grocery-tab{
+    border:1px solid var(--line); background: var(--card); color: var(--ink-soft);
+    padding:7px 16px; border-radius:100px; font-size:13px; cursor:pointer;
+  }
+  .grocery-tab.active{ background: var(--ink); color: var(--bg); border-color: var(--ink); }
   .grocery-sheet{
     background: var(--card); border:1px solid var(--line); border-radius:10px;
     padding: 22px 24px; box-shadow: 0 14px 30px -20px var(--shadow);
@@ -380,10 +416,15 @@
   .rc-chip b{ display:block; font-family:'Fraunces',serif; font-size:13px; font-weight:600; margin:2px 0; }
   .rc-when{ color: var(--ink-soft); font-size:11px; }
   @media (max-width: 760px){
-    .recipes-top{ padding: 104px 16px 0; }
+    .recipes-top{ padding: calc(var(--topbar-h) + 14px) 16px 0; }
     .recipe-cards{ padding: 12px 16px 150px; grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); gap:12px; }
-    .grocery-wrap{ padding-top: 118px; }
-    .plan-wrap{ padding-top: 110px; }
+    .grocery-wrap{ padding-top: calc(var(--topbar-h) + 14px); padding-left: 16px; padding-right: 16px; }
+    .plan-wrap{ padding-top: calc(var(--topbar-h) + 14px); }
+    /* Clear of the bottom search bar, which occupies ~22–68px from the bottom. */
+    .addbtn.above-bottombar{ bottom: 86px; right: 20px; }
+    .addbtn{ right: 20px; }
+    /* A near-empty panel shouldn't eat most of a phone screen. */
+    .recipes-tab-empty{ padding: 48px 16px; }
     .plan-grid{ grid-template-columns: 1fr; }
     .searchwrap{ width: min(420px, 68vw); }
   }
@@ -434,7 +475,7 @@
   .card-flag.want{ color: var(--accent); }
 
   /* ---------- meal plan ---------- */
-  .plan-wrap{ max-width: 1280px; margin:0 auto; padding: 126px 32px 150px; }
+  .plan-wrap{ max-width: 1280px; margin:0 auto; padding: calc(var(--topbar-h) + 34px) 32px 150px; }
   .plan-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:18px; }
   .plan-head h2{ margin:0; font-size:26px; }
   .plan-head .sub{ font-size:12.5px; color: var(--ink-soft); margin-top:3px; }
@@ -462,6 +503,8 @@
 
   @media (max-width: 760px){
     .topbar{ flex-wrap: wrap; padding: 16px 20px 10px; row-gap: 10px; }
+    .tab-switch{ flex-wrap: wrap; justify-content: center; width: 100%; }
+    .topbar-right{ flex-wrap: wrap; justify-content: center; width: 100%; gap: 8px; }
   }
 
   /* Fixed 7-column week grid — this replaces the old auto-fit .plan-grid rule
@@ -660,3 +703,46 @@
 /* ---------- pantry ---------- */
 .g-item.low-stock .g-text { color: var(--accent); }
 .g-item.low-stock input[type=checkbox] { accent-color: var(--accent); }
+
+/* ---------- menu planner ---------- */
+.menu-wrap { max-width: 1280px; margin: 0 auto; padding: calc(var(--topbar-h) + 34px) 32px 150px; display: flex; gap: 24px; align-items: flex-start; }
+.menu-sidebar { flex: none; width: 260px; }
+.menu-editor {
+  flex: 1; min-width: 0; background: var(--card); border: 1px solid var(--line);
+  border-radius: 10px; padding: 22px 24px; box-shadow: 0 14px 30px -20px var(--shadow);
+}
+
+.menu-list { display: flex; flex-direction: column; gap: 6px; }
+.menu-list-item { display: flex; align-items: center; gap: 4px; }
+.menu-list-item-main {
+  flex: 1; min-width: 0; text-align: left; border: 1px solid var(--line); background: var(--card);
+  border-radius: 8px; padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 2px;
+}
+.menu-list-item-main b { font-family: 'Fraunces', serif; font-size: 13.5px; }
+.menu-list-item-main .muted { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu-list-item.active .menu-list-item-main { background: var(--ink); border-color: var(--ink); }
+.menu-list-item.active .menu-list-item-main b,
+.menu-list-item.active .menu-list-item-main .muted { color: var(--card); }
+.menu-list-item-del { border: none; background: none; cursor: pointer; color: var(--ink-soft); font-size: 12px; padding: 4px; flex: none; }
+
+.menu-slots { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+.menu-slot { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--bg); }
+.menu-slot-top { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.menu-slot-course {
+  flex: 1; min-width: 0; border: none; background: none; font-family: 'Fraunces', serif;
+  font-weight: 600; font-size: 13.5px; color: var(--ink); padding: 2px 0; border-bottom: 1px solid transparent;
+}
+.menu-slot-course:focus { outline: none; border-bottom-color: var(--accent); }
+.menu-slot-lock, .menu-slot-remove { border: none; background: none; cursor: pointer; color: var(--ink-soft); font-size: 13px; padding: 2px 4px; flex: none; }
+.menu-slot-lock.on { color: var(--accent); }
+.menu-slot-filled {
+  display: block; width: 100%; text-align: left; border: 1px solid var(--line); background: var(--card);
+  border-radius: 7px; padding: 8px 10px; cursor: pointer; font-size: 13.5px;
+}
+.menu-slot-filled:hover { background: var(--bg-alt); }
+.menu-slot-suggestion { font-size: 13px; background: var(--bg-alt); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; }
+
+@media (max-width: 760px) {
+  .menu-wrap { padding: calc(var(--topbar-h) + 14px) 16px 150px; flex-direction: column; }
+  .menu-sidebar { width: 100%; }
+}

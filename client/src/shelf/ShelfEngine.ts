@@ -7,8 +7,17 @@ import { colorFor } from '../utils/colors';
 // thousand DOM nodes mounting/unmounting every scroll tick) would be slow and
 // fight the framework, so — same as wrapping D3 or Mapbox — it's a small
 // self-contained engine that owns a container element directly. React just
-// mounts it, feeds it data, and tears it down. The math/behavior below mirrors
-// the original implementation exactly.
+// mounts it, feeds it data, and tears it down.
+//
+// The infinite-scroll illusion scrolls an isolated `overflow: auto` viewport
+// element, NOT the real page/window. An earlier version scrolled the actual
+// document out to ~1,000,000px, which crashed mobile Safari ("a problem
+// repeatedly occurred") every time you left this tab — making the whole page
+// itself that large affects the browser's own chrome (URL bar collapse,
+// visual viewport, position:fixed compositing) in ways a plain internal
+// scroll container never does. Browsers handle enormous *internal* scrollable
+// regions fine (any spreadsheet or map app does this); it's specifically
+// making the document itself gigantic that's fragile.
 
 const TILE_WIDTH = 176;
 const GAP = 26;
@@ -18,7 +27,7 @@ const STAGGER_PATTERN = [0, 34, 14, 44, 20];
 const MAX_RADIUS = 40;
 const EDGE_THRESHOLD = 900;
 const GROW_STEP = 4;
-const MAX_TILES_TOTAL = 1400;
+const MAX_TILES_TOTAL = 600; // trimmed from 1400 — less DOM/image memory held at once, still plenty for a smooth feel
 const CENTER_X = 500000;
 const CENTER_Y = 1000000;
 
@@ -29,6 +38,7 @@ export interface ShelfEngineCallbacks {
 }
 
 export class ShelfEngine {
+  private viewport: HTMLElement;
   private container: HTMLElement;
   private callbacks: ShelfEngineCallbacks;
   private items: Cookbook[] = [];
@@ -41,8 +51,15 @@ export class ShelfEngine {
   private totalTiles = 0;
 
   private isActive = true;
+  // Growth is driven by where the viewport is looking. Until the canvas has
+  // been centred on its virtual origin the scroll position is still 0, which
+  // reads as "the user is a million pixels above the books" and makes the
+  // first column grow upward until it has eaten the entire tile budget —
+  // leaving every other column empty. So: no growing before centring.
+  private centered = false;
   private scrollTicking = false;
   private resizeTimer: ReturnType<typeof setTimeout> | null = null;
+  private resizeObserver: ResizeObserver | null = null;
   private onScroll = () => {
     if (!this.isActive || this.scrollTicking) return;
     this.scrollTicking = true;
@@ -54,20 +71,42 @@ export class ShelfEngine {
     this.resizeTimer = setTimeout(() => this.maybeGrow(), 200);
   };
 
-  constructor(container: HTMLElement, callbacks: ShelfEngineCallbacks) {
-    this.container = container;
+  /** `viewport` is the scrollable element (overflow: auto); `canvas` is the
+   *  absolutely-positioned tile container inside it. Kept separate so the
+   *  canvas can grow to an arbitrary virtual size without that ever becoming
+   *  the real page's size. */
+  constructor(viewport: HTMLElement, canvas: HTMLElement, callbacks: ShelfEngineCallbacks) {
+    this.viewport = viewport;
+    this.container = canvas;
     this.callbacks = callbacks;
-    window.addEventListener('scroll', this.onScroll);
-    window.addEventListener('resize', this.onResize);
+    this.viewport.addEventListener('scroll', this.onScroll, { passive: true });
+    this.resizeObserver = new ResizeObserver(this.onResize);
+    this.resizeObserver.observe(this.viewport);
   }
 
   setActive(active: boolean): void {
     this.isActive = active;
+    // Leaving the shelf: tear the tiles down rather than just hiding them —
+    // cheap now that this is an isolated scroll container, but still no
+    // reason to hold hundreds of decoded cover images in memory in the
+    // background. Returning to the shelf already rebuilds from scratch via
+    // setItems() (triggered by ShelfView's active-dependent effect).
+    if (!active) this.clearTiles();
+  }
+
+  private clearTiles(): void {
+    this.centered = false;
+    this.container.innerHTML = '';
+    this.tilesByBook = {};
+    this.colState = {};
+    this.minColGen = 0;
+    this.maxColGen = -1;
+    this.totalTiles = 0;
   }
 
   destroy(): void {
-    window.removeEventListener('scroll', this.onScroll);
-    window.removeEventListener('resize', this.onResize);
+    this.viewport.removeEventListener('scroll', this.onScroll);
+    this.resizeObserver?.disconnect();
     if (this.resizeTimer) clearTimeout(this.resizeTimer);
     this.container.innerHTML = '';
   }
@@ -75,22 +114,21 @@ export class ShelfEngine {
   /** Rebuilds the shelf for a new filtered/sorted set of books, then centers the view. */
   async setItems(items: Cookbook[]): Promise<void> {
     this.items = items;
-    this.container.innerHTML = '';
-    this.tilesByBook = {};
-    this.colState = {};
-    this.minColGen = 0;
-    this.maxColGen = -1;
-    this.totalTiles = 0;
+    this.centered = false;
+    this.clearTiles();
 
     if (items.length === 0) return;
 
     await this.preloadAllAspects(items);
 
-    const colsHalf = Math.ceil((window.innerWidth / 2) / COL_PITCH) + 2;
+    const viewW = this.viewport.clientWidth || window.innerWidth;
+    const viewH = this.viewport.clientHeight || window.innerHeight;
+
+    const colsHalf = Math.ceil((viewW / 2) / COL_PITCH) + 2;
     this.minColGen = -colsHalf;
     this.maxColGen = colsHalf;
-    const targetTop = CENTER_Y - window.innerHeight / 2 - 700;
-    const targetBottom = CENTER_Y + window.innerHeight / 2 + 700;
+    const targetTop = CENTER_Y - viewH / 2 - 700;
+    const targetBottom = CENTER_Y + viewH / 2 + 700;
     for (let c = this.minColGen; c <= this.maxColGen; c++) {
       this.initColumn(c);
       this.growColumnUp(c, targetTop);
@@ -108,7 +146,11 @@ export class ShelfEngine {
   }
 
   private centerScroll(): void {
-    window.scrollTo(CENTER_X - window.innerWidth / 2, CENTER_Y - window.innerHeight / 2);
+    const viewW = this.viewport.clientWidth || window.innerWidth;
+    const viewH = this.viewport.clientHeight || window.innerHeight;
+    this.viewport.scrollLeft = CENTER_X - viewW / 2;
+    this.viewport.scrollTop = CENTER_Y - viewH / 2;
+    this.centered = true;
   }
 
   private leftPxForCol(col: number): number { return CENTER_X + col * COL_PITCH - TILE_WIDTH / 2; }
@@ -155,7 +197,7 @@ export class ShelfEngine {
     const pieBadge = total > 0
       ? `<div class="badge pie" title="${tried}/${total} recipes tried (${pct}%)">${buildRing(pct, 20, 3.5, false)}</div>`
       : '<span></span>';
-    const ratingBadge = book.rating > 0 ? `<div class="badge rating">\u2605 ${book.rating}</div>` : '<span></span>';
+    const ratingBadge = book.rating > 0 ? `<div class="badge rating">★ ${book.rating}</div>` : '<span></span>';
     return `${coverInner}<div class="badges">${pieBadge}${ratingBadge}</div>`;
   }
 
@@ -212,10 +254,11 @@ export class ShelfEngine {
   }
 
   private maybeGrow(): void {
+    if (!this.centered) return;
     if (this.items.length === 0 || this.totalTiles >= MAX_TILES_TOTAL) return;
 
-    const viewLeft = window.scrollX, viewRight = viewLeft + window.innerWidth;
-    const viewTop = window.scrollY, viewBottom = viewTop + window.innerHeight;
+    const viewLeft = this.viewport.scrollLeft, viewRight = viewLeft + this.viewport.clientWidth;
+    const viewTop = this.viewport.scrollTop, viewBottom = viewTop + this.viewport.clientHeight;
     const needTop = viewTop - EDGE_THRESHOLD;
     const needBottom = viewBottom + EDGE_THRESHOLD;
 

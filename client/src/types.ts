@@ -154,7 +154,7 @@ export interface CollectionAnalysis {
   book_recommendations: BookRecommendation[];
 }
  
-export type TabName = 'shelf' | 'recipes' | 'plan' | 'grocery' | 'pantry';
+export type TabName = 'shelf' | 'recipes' | 'plan' | 'menu' | 'grocery';
 
 // Add this new type:
 export interface CalendarEvent {
@@ -188,10 +188,19 @@ export interface RecipePairing {
   reason: string;
 }
 
-export interface MenuCourse {
+export interface MenuSlot {
+  id: string;
   course: string;
-  recipe_id: string | null;
-  name: string;
-  reason: string;
-  in_collection: boolean;
+  recipeId: string | null;
+  locked: boolean;
+  suggestionName: string;
+  suggestionReason: string;
+}
+
+export interface Menu {
+  id: string;
+  title: string;
+  context: string;
+  dateAdded: number;
+  slots: MenuSlot[];
 }

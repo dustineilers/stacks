@@ -32,6 +32,7 @@ export function getFilteredShelfItems(books: Cookbook[], filters: ShelfFilters, 
 }
 
 export function ShelfView({ active, books, filters, searchTerm, onOpenBook, onAddFirst }: ShelfViewProps) {
+  const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<ShelfEngine | null>(null);
 
@@ -39,14 +40,14 @@ export function ShelfView({ active, books, filters, searchTerm, onOpenBook, onAd
 
   // Created ONCE for the lifetime of the app — not per tab-visit. Recreating this
   // imperative engine (its scroll listeners, its absolutely-positioned tiles at
-  // huge virtual coordinates, and the window.scrollTo() that centers on them)
+  // huge virtual coordinates, and the scrollTo() that centers on them)
   // every time you switch tabs is what caused the "blank shelf with a few books
   // off to the side" bug: the engine was torn down and rebuilt while the
-  // browser's scroll position was still settling from the tab switch. Mounting
-  // once and toggling visibility with CSS avoids that whole class of race.
+  // scroll position was still settling from the tab switch. Mounting once and
+  // toggling visibility with CSS avoids that whole class of race.
   useEffect(() => {
-    if (!canvasRef.current) return;
-    const engine = new ShelfEngine(canvasRef.current, { onOpenBook });
+    if (!viewportRef.current || !canvasRef.current) return;
+    const engine = new ShelfEngine(viewportRef.current, canvasRef.current, { onOpenBook });
     engineRef.current = engine;
     return () => engine.destroy();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -83,7 +84,9 @@ export function ShelfView({ active, books, filters, searchTerm, onOpenBook, onAd
           <button className="btn primary" onClick={onAddFirst}>Add your first cookbook</button>
         </div>
       )}
-      <div className="canvas" ref={canvasRef} style={{ display: showCanvas ? 'block' : 'none' }} />
+      <div className="shelf-viewport" ref={viewportRef}>
+        <div className="canvas" ref={canvasRef} style={{ display: showCanvas ? 'block' : 'none' }} />
+      </div>
       {showNoMatch && <div id="noMatch" style={{ display: 'block' }}>No cookbooks match that search.</div>}
     </div>
   );
